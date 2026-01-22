@@ -16,7 +16,7 @@ import { classRoutes } from "./routes/classRoutes.js";
 import { academicYearRoutes } from "./routes/academicYearRoutes.js";
 import { bookRoutes } from "./routes/bookRoutes.js";
 
-dotenv.config({ path: path.resolve("./config/.env") });
+dotenv.config({ path: path.resolve("./.env") });
 
 export class Server {
     constructor() {
