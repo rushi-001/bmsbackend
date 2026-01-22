@@ -1,10 +1,155 @@
+import mongoose from "mongoose";
 import BookSets from "../model/bookSetModel.js";
+import BookSetsItems from "../model/bookSetItemsModel.js";
+import { BookSetItemsRepository } from "./bookSetItemsRepository.js";
 
 export class BookSetRepository {
 
-    create = async (bookSetData) => {
-        return BookSets.create(bookSetData);
+    constructor() {
+        this.bookSetItemsRepository = new BookSetItemsRepository();
     }
+
+    findByIdWithAggregation = async (id) => {
+        console.log("id: ", id);
+        const all = await BookSetsItems.find();
+        console.log(
+            all.map(d => d.book_sets.toString())
+        );
+
+        const pipeline = [
+            {
+                $match: { _id: new mongoose.Types.ObjectId(id) }
+            },
+
+            {
+                $addFields: {
+                    board: { $toObjectId: "$board" },
+                    medium: { $toObjectId: "$medium" },
+                    class: { $toObjectId: "$class" },
+                    academic_year: { $toObjectId: "$academic_year" }
+                }
+            },
+
+            {
+                $lookup: {
+                    from: "boards",
+                    localField: "board",
+                    foreignField: "_id",
+                    as: "board"
+                }
+            },
+            { $unwind: "$board" },
+
+            {
+                $lookup: {
+                    from: "mediums",
+                    localField: "medium",
+                    foreignField: "_id",
+                    as: "medium"
+                }
+            },
+            { $unwind: "$medium" },
+
+            {
+                $lookup: {
+                    from: "classes",
+                    localField: "class",
+                    foreignField: "_id",
+                    as: "class"
+                }
+            },
+            { $unwind: "$class" },
+
+            {
+                $lookup: {
+                    from: "academic_years",
+                    localField: "academic_year",
+                    foreignField: "_id",
+                    as: "academic_year"
+                }
+            },
+            { $unwind: "$academic_year" },
+
+            {
+                $lookup: {
+                    from: "book_set_items",
+                    let: { bookSetId: "$_id" },
+                    pipeline: [
+                        { $match: { $expr: { $eq: ["$book_sets", "$$bookSetId"] } } },
+                        {
+                            $addFields: {
+                                book: { $toObjectId: "$book" }
+                            }
+                        },
+                        {
+                            $lookup: {
+                                from: "books",
+                                localField: "book",
+                                foreignField: "_id",
+                                as: "book"
+                            }
+                        },
+                        { $unwind: { path: "$book", preserveNullAndEmptyArrays: true } },
+                        {
+                            $project: {
+                                _id: 1,
+                                quantity: 1,
+                                book: "$book"
+                            }
+                        }
+                    ],
+                    as: "books"
+                }
+            },
+
+            {
+                $project: {
+                    _id: 1,
+                    book_set_name: 1,
+                    board: {
+                        _id: "$board._id",
+                        board_name: "$board.name",
+                        board_code: "$board.code"
+                    },
+                    medium: {
+                        _id: "$medium._id",
+                        medium_name: "$medium.name",
+                        medium_code: "$medium.code"
+                    },
+                    class: {
+                        _id: "$class._id",
+                        class_name: "$class.name",
+                        class_grade: "$class.grade"
+                    },
+                    academic_year: {
+                        _id: "$academic_year._id",
+                        academic_year: "$academic_year.academic_year",
+                        is_current: "$academic_year.is_current"
+                    },
+                    books: 1,
+                    total_books: { $size: "$books" },
+                    createdAt: 1
+                }
+            }
+        ];
+
+        const result = await BookSets.aggregate(pipeline);
+        console.log("result", result)
+        return result[0] || null;
+    };
+
+    create = async (bookSetData) => {
+        const { books, ...bookSetDataWithoutBooks } = bookSetData;
+        const bookSet = await BookSets.create(bookSetDataWithoutBooks);
+        const bookSetItemsPayload = books.map(item => ({
+            book_sets: bookSet._id,
+            book: item.book_id,
+            quantity: item.quantity ?? 1,
+        }));
+
+        await this.bookSetItemsRepository.createMany(bookSetItemsPayload);
+        return this.findByIdWithAggregation(bookSet._id);
+    };
 
     findWithFilter = async (filter, skip, limit) => {
         // const collections = await mongoose.connection.db.listCollections().toArray();
@@ -147,17 +292,40 @@ export class BookSetRepository {
         };
     };
 
+    // updateWithId = async (bookSetId, newBookSetData) => {
+    //     const updatedBookSet = await BookSets.findByIdAndUpdate(
+    //         bookSetId,
+    //         { $set: newBookSetData },
+    //         { new: true, runValidators: true }
+    //     );
+
+    //     return updatedBookSet;
+    // }
+
     updateWithId = async (bookSetId, newBookSetData) => {
-        const updatedBookSet = await BookSets.findByIdAndUpdate(
+        const { books, ...newBookSetDataWithoutBooks } = newBookSetData;
+        await BookSets.findByIdAndUpdate(
             bookSetId,
-            { $set: newBookSetData },
-            { new: true, runValidators: true }
+            { $set: newBookSetDataWithoutBooks },
+            { runValidators: true }
         );
 
-        return updatedBookSet;
-    }
+        await this.bookSetItemsRepository.deleteManyWithId(bookSetId);
+
+        const itemsPayload = books.map(item => ({
+            book_sets: bookSetId,
+            book: item.book_id,
+            quantity: item.quantity ?? 1
+        }));
+
+        await this.bookSetItemsRepository.createMany(itemsPayload);
+
+        return this.findByIdWithAggregation(bookSetId);
+    };
 
     deleteWithId = async (bookSetId) => {
-        return BookSets.findByIdAndDelete(bookSetId);
+        await BookSets.findByIdAndDelete(bookSetId);
+        await BookSetsItems.deleteMany({ book_sets: bookSetId });
+        return true
     }
 }

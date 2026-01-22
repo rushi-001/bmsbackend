@@ -22,15 +22,8 @@ export class BookSetServices {
                 class: class_id,
                 academic_year: academic_year_id,
                 book_set_name,
+                books,
             });
-
-            const bookSetItemsPayload = books.map(item => ({
-                book_sets: bookSet._id,
-                book: item.book_id,
-                quantity: item.quantity ?? 1,
-            }));
-
-            await this.bookSetItemsRepository.createMany(bookSetItemsPayload);
 
             return bookSet;
         } catch (error) {
@@ -75,23 +68,26 @@ export class BookSetServices {
                     medium: new mongoose.Types.ObjectId(medium_id),
                     class: new mongoose.Types.ObjectId(class_id),
                     academic_year: new mongoose.Types.ObjectId(academic_year_id),
-                    book_set_name
+                    book_set_name,
+                    books
                 }
             );
 
-            if (!updatedBookSet) {
-                throw new Error("Book Set not found.");
-            }
+            // if (!updatedBookSet) {
+            //     throw new Error("Book Set not found.");
+            // }
 
-            await this.bookSetItemsRepository.deleteManyWithId(bookSetId);
+            // await this.bookSetItemsRepository.deleteManyWithId(bookSetId);
 
-            const itemsPayload = books.map(item => ({
-                book_sets: bookSetId,
-                book: item.book_id,
-                quantity: item.quantity ?? 1
-            }));
+            // const itemsPayload = books.map(item => ({
+            //     book_sets: bookSetId,
+            //     book: item.book_id,
+            //     quantity: item.quantity ?? 1
+            // }));
 
-            await this.bookSetItemsRepository.createMany(itemsPayload);
+            // await this.bookSetItemsRepository.createMany(itemsPayload);
+
+            return updatedBookSet;
         }
         catch (error) {
             throw error;
